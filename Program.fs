@@ -15,8 +15,10 @@ module ProgramState =
 type FilesystemTool() =
     static member private SanitizeFilename(filename: string) =
         let normalized = filename.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar)
-        let justName = Path.GetFileName(normalized)
-        if String.IsNullOrEmpty(justName) then filename else justName
+        let justName = Path.GetFileName(normalized) |> Option.ofObj
+        match justName with
+        | Some name when not (String.IsNullOrEmpty(name)) -> name
+        | _ -> filename
 
     [<McpServerTool; Description("Read the complete contents of a file from the directory as text. " +
           "Handles various text encodings and provides detailed error messages if the file cannot be read. " +
@@ -25,8 +27,8 @@ type FilesystemTool() =
           "Operates on the file as text regardless of extension. " +
           "File must be in the directory specified at startup.")>]
     member _.ReadTextFile([<Description("The filename to read from the directory")>] filename: string,
-                          [<Description("If provided, returns only the first N lines of the file")>] ?head: int,
-                          [<Description("If provided, returns only the last N lines of the file")>] ?tail: int) : string =
+                          [<Description("If provided, returns only the first N lines of the file")>] head: Nullable<int>,
+                          [<Description("If provided, returns only the last N lines of the file")>] tail: Nullable<int>) : string =
         try
             let sanitized = FilesystemTool.SanitizeFilename(filename)
             let fullPath = Path.Combine(ProgramState.RootDirectory, sanitized)
@@ -35,10 +37,10 @@ type FilesystemTool() =
             
             let content = File.ReadAllText(fullPath)
             let mutable lines = content.Split('\n')
-            match head, tail with
-            | Some h, _ -> lines <- lines |> Seq.truncate h |> Seq.toArray
-            | None, Some t -> lines <- lines |> Seq.rev |> Seq.truncate t |> Seq.rev |> Seq.toArray
-            | _ -> ()
+            if head.HasValue then
+                lines <- lines |> Seq.truncate head.Value |> Seq.toArray
+            elif tail.HasValue then
+                lines <- lines |> Seq.rev |> Seq.truncate tail.Value |> Seq.rev |> Seq.toArray
             String.Join("\n", lines)
         with ex ->
             $"Error reading file: {ex.Message}"
